@@ -5,7 +5,7 @@
 - 원천 데이터: 공공데이터포털 [전국 우체국 현황 (15070368)](https://www.data.go.kr/data/15070368/fileData.do)
 - 수집 경로: 포털이 업로드 파일마다 자동 생성하는 Open API (`api.odcloud.kr`)
 
-GitHub Actions가 매일 포털을 확인하고, **새 파일이 올라왔을 때만** 내려받아 커밋합니다. `data/`의 git 이력 자체가 변경 기록입니다.
+GitHub Actions가 매주 포털을 확인하고, **새 파일이 올라왔을 때만** 내려받아 커밋합니다. `data/`의 git 이력 자체가 변경 기록입니다.
 
 ## 왜 직접 보관하나
 
@@ -60,7 +60,7 @@ GitHub Actions가 매일 포털을 확인하고, **새 파일이 올라왔을 �
   3. `--refresh`는 최신 파일도 다시 받아, 같은 이름으로 내용만 고쳐 재업로드한 경우를 잡습니다. 내용이 같으면 아무것도 바꾸지 않습니다.
 - `scraper/build.py`: 스냅샷에서 changelog, 통계, `post_offices.csv`를 다시 만듭니다.
 - `scraper/reprocess.py`: 정규화 규칙을 고친 뒤 `data/raw/`에서 모든 스냅샷을 다시 만듭니다. 포털 데이터가 바뀐 게 아니므로 `revisions`는 올리지 않습니다.
-- `.github/workflows/collect.yml`: 매일 01:23 UTC(10:23 KST)에 실행하고 월요일에는 `--refresh`를 붙입니다. 수동 실행 시 `new` / `refresh` / `refresh-all`을 고를 수 있습니다. 변경이 없으면 커밋하지 않고, 매월 1일에만 `meta.json`을 커밋합니다(60일 동안 활동이 없으면 GitHub가 예약 실행을 멈추기 때문).
+- `.github/workflows/collect.yml`: 매주 월요일 01:23 UTC(10:23 KST)에 실행하며, 새 파일 확인과 함께 최신 파일도 다시 받아 같은 이름의 재업로드를 잡습니다. 수동 실행 시 `new` / `refresh` / `refresh-all`을 고를 수 있습니다. 변경이 없으면 커밋하지 않고, 마지막 커밋이 30일을 넘었을 때만 `meta.json`을 커밋합니다(60일 동안 활동이 없으면 GitHub가 예약 실행을 멈추기 때문).
 
 ## 손으로 받은 CSV 넣기
 

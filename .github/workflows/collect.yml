@@ -2,8 +2,8 @@ name: Check post office dataset
 
 on:
   schedule:
-    # Every day at 01:23 UTC (10:23 KST)
-    - cron: "23 1 * * *"
+    # Every Monday at 01:23 UTC (10:23 KST)
+    - cron: "23 1 * * 1"
   workflow_dispatch:
     inputs:
       mode:
@@ -45,8 +45,8 @@ jobs:
           ARGS=""
           if [ "$MODE" = "refresh" ]; then ARGS="--refresh"; fi
           if [ "$MODE" = "refresh-all" ]; then ARGS="--refresh-all"; fi
-          # Weekly (Mondays): re-download the newest file to catch silent re-uploads.
-          if [ -z "$MODE" ] && [ "$(date -u +%u)" = "1" ]; then ARGS="--refresh"; fi
+          # Scheduled (weekly) runs also re-download the newest file to catch silent re-uploads.
+          if [ -z "$MODE" ]; then ARGS="--refresh"; fi
           python scraper/collect.py $ARGS
 
       - name: Commit if data changed
@@ -57,9 +57,9 @@ jobs:
             git add data
             git commit -m "우체국 현황 갱신: 기준일 ${{ steps.collect.outputs.latest }} ($(date -u +%Y-%m-%d))"
             git push
-          elif [ "$(date -u +%d)" = "01" ]; then
-            # Monthly heartbeat: GitHub pauses scheduled workflows after 60 days
-            # without repository activity, so record the check date once a month.
+          elif [ $(( $(date +%s) - $(git log -1 --format=%ct) )) -gt 2592000 ]; then
+            # Heartbeat: GitHub pauses scheduled workflows after 60 days without
+            # repository activity, so commit meta.json if the last commit is >30 days old.
             git add data/meta.json
             git commit -m "Monthly check: no changes ($(date -u +%Y-%m-%d))" || exit 0
             git push
