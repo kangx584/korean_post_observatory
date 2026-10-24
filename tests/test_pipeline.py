@@ -3,8 +3,10 @@
     python tests/test_pipeline.py      (or: pytest tests)
 """
 
+import contextlib
 import csv
 import gzip
+import io
 import json
 import os
 import sys
@@ -88,7 +90,9 @@ collect.time.sleep = lambda s: None
 
 def run(*argv):
     sys.argv = ["collect.py", *argv]
-    assert collect.main() == 0
+    # Swallow output so "::notice::" lines from fake data don't become real CI annotations.
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert collect.main() == 0
 
 
 def read(name):
