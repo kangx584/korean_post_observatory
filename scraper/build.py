@@ -8,7 +8,10 @@
 Matching offices across snapshots (there is no official office ID):
   1. same (지방우정청, 우체국명)      — when unique on both sides
   2. same 우체국명                    — catches a change of 지방우정청
-  3. same 주소(도로명)                — catches a rename at the same address
+  3. same 주소(도로명), after normalizing 시도 renames (강원도→강원특별자치도,
+     광주/전남→전남광주통합특별시), status tags and (동) notes — catches a rename
+  4. same 지방우정청 + name without its type suffix — catches 우체국→우편취급국
+Address fields count as changed only when that normalized form differs.
 Anything left over is 추가 (added) or 삭제 (removed).
 """
 
@@ -18,7 +21,7 @@ import re
 from collections import Counter
 
 from common import (CHANGELOG_CSV, COLUMNS, CURRENT_CSV, SIDO_ORDER, SNAPSHOTS, STATS,
-                    read_csv, sido_of, write_csv)
+                    canon_addr, read_csv, sido_of, write_csv)
 
 SNAP_RE = re.compile(r"^\d{8}\.csv$")
 CHANGELOG_COLUMNS = ["기준일", "이전기준일", "변경", "지방우정청", "우체국명", "항목", "이전값", "새값"]
@@ -32,8 +35,22 @@ def load(date: str) -> list[dict]:
     return read_csv(SNAPSHOTS / f"{date}.csv")
 
 
+TYPE_SUFFIX = re.compile(r"(우편취급국|우편출장소|우체국|취급국|출장소)$")
+
+
 def _addr_key(row: dict) -> str:
-    return re.sub(r"[\s,()]", "", row.get("주소(도로명)", ""))
+    return canon_addr(row.get("주소(도로명)", ""))
+
+
+def _stem_key(row: dict) -> tuple[str, str]:
+    """'의성가음우체국' and '의성가음우편취급국' share a stem: catches a change of office type."""
+    return (row["지방우정청"], TYPE_SUFFIX.sub("", row["우체국명"]))
+
+
+def _same(field: str, a: str, b: str) -> bool:
+    if field in ("주소(도로명)", "주소(지번)"):
+        return canon_addr(a) == canon_addr(b)  # ignore 시도 renames and formatting
+    return a == b
 
 
 def _match(old: list[dict], new: list[dict], keyfn) -> list[tuple[dict, dict]]:
@@ -63,13 +80,14 @@ def diff(old_rows: list[dict], new_rows: list[dict]) -> list[dict]:
     pairs += _match(old, new, lambda r: (r["지방우정청"], r["우체국명"]))
     pairs += _match(old, new, lambda r: r["우체국명"])
     pairs += _match(old, new, _addr_key)
+    pairs += _match(old, new, _stem_key)
 
     # Only compare fields both snapshots actually carry (2026 dropped 주소(지번)).
     fields = [c for c in COLUMNS if c in _populated(old_rows) and c in _populated(new_rows)]
     out = []
     for o, n in pairs:
         for f in fields:
-            if o.get(f, "") != n.get(f, ""):
+            if not _same(f, o.get(f, ""), n.get(f, "")):
                 out.append({"변경": "변경", "지방우정청": n["지방우정청"], "우체국명": n["우체국명"],
                             "항목": f, "이전값": o.get(f, ""), "새값": n.get(f, "")})
     for r in old:

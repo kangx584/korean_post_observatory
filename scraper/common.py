@@ -28,7 +28,8 @@ OAS_URL = f"https://infuser.odcloud.kr/oas/docs?namespace={NAMESPACE}"
 API_BASE = "https://api.odcloud.kr/api"
 
 # Standard column order. The 2023 file has 주소(지번); the 2026 file does not.
-COLUMNS = ["지방우정청", "총괄국명", "우체국명", "우편번호", "주소(도로명)", "주소(지번)", "전화번호"]
+# 상태 is derived: tags such as (임시청사), (운영중지), [시간제_오전] are moved out of the address into it.
+COLUMNS = ["지방우정청", "총괄국명", "우체국명", "우편번호", "주소(도로명)", "주소(지번)", "전화번호", "상태"]
 
 # Header spellings seen (or likely) in API models and hand-downloaded CSVs.
 HEADER_ALIASES = {
@@ -67,6 +68,26 @@ def clean_postal(value) -> str:
     return digits or s
 
 
+_LEAD_TAG = re.compile(r"^\s*\(([^)]*)\)\s*")
+_BRACKET_TAG = re.compile(r"\s*\[([^\]]*)\]\s*")
+STATUS_WORDS = ("임시청사", "운영중지", "업무중지", "업무개시", "기존", "휴국", "폐국", "이전", "신축")
+
+
+def split_status(addr: str) -> tuple[str, list[str]]:
+    """'(임시청사) 강원도 ... [시간제_오전]' -> ('강원도 ...', ['임시청사', '시간제_오전'])."""
+    tags = []
+    while True:
+        m = _LEAD_TAG.match(addr)
+        if not m or not any(w in m.group(1) for w in STATUS_WORDS):
+            break
+        tags.append(m.group(1).strip())
+        addr = addr[m.end():]
+    for t in _BRACKET_TAG.findall(addr):
+        tags.append(t.strip())
+    addr = _BRACKET_TAG.sub(" ", addr)
+    return clean(addr), tags
+
+
 def normalize_rows(records: list[dict]) -> tuple[list[dict], list[str]]:
     """Map arbitrary source records onto the standard columns.
 
@@ -82,6 +103,12 @@ def normalize_rows(records: list[dict]) -> tuple[list[dict], list[str]]:
             if col not in COLUMNS and col not in extra:
                 extra.append(col)
             row[col] = clean_postal(v) if col == "우편번호" else clean(v)
+        tags: list[str] = []
+        for col in ("주소(도로명)", "주소(지번)"):
+            row[col], t = split_status(row[col])
+            tags += [x for x in t if x not in tags]
+        if tags and not row["상태"]:
+            row["상태"] = "; ".join(tags)
         rows.append(row)
     columns = COLUMNS + extra
     for row in rows:
@@ -155,9 +182,27 @@ SIDO = {
     "경북": "경북", "경상북도": "경북",
     "경남": "경남", "경상남도": "경남",
     "제주": "제주", "제주특별자치도": "제주", "제주도": "제주",
+    # 2026: 광주광역시 + 전라남도 → 전남광주통합특별시
+    "전남광주": "전남광주", "전남광주통합특별시": "전남광주",
 }
 SIDO_ORDER = ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기",
-              "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"]
+              "강원", "충북", "충남", "전북", "전남", "전남광주", "경북", "경남", "제주"]
+
+
+def canon_addr(addr: str) -> str:
+    """Address key that ignores 시도 renames (강원도→강원특별자치도 ...), status tags,
+    a trailing (동) note and spacing/commas — for matching and for deciding whether
+    an address really changed."""
+    a, _ = split_status(addr or "")
+    if not a:
+        return ""
+    first, _, rest = a.partition(" ")
+    first = SIDO.get(first, first)
+    if first in ("광주", "전남"):
+        first = "전남광주"
+    a = first + " " + rest
+    a = re.sub(r"\([^)]*\)\s*$", "", a)
+    return re.sub(r"[\s,]", "", a)
 
 
 def sido_of(row: dict) -> str:
@@ -167,4 +212,7 @@ def sido_of(row: dict) -> str:
             first = addr.split(" ", 1)[0]
             if first in SIDO:
                 return SIDO[first]
-    return "미상"
+    # e.g. '(영업과,FC실) 서울특별시 양천구 ...': take the first full 시도 name anywhere.
+    addr = row.get("주소(도로명)", "")
+    hits = [(addr.find(k), v) for k, v in SIDO.items() if len(k) > 2 and k in addr]
+    return min(hits)[1] if hits else "미상"

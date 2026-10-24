@@ -19,7 +19,7 @@ os.environ["DATA_GO_KR_KEY"] = "abc%2Bdef%3D%3D"  # an 'Encoding' key
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scraper"))
 
 import collect  # noqa: E402
-from common import clean_postal, normalize_rows, sido_of  # noqa: E402
+from common import canon_addr, clean_postal, normalize_rows, sido_of, split_status  # noqa: E402
 
 U23 = "uddi:cea8854d-35c4-4a7f-a100-f241ea289d76"
 U26 = "uddi:933fdcfa-7965-42c1-bc1a-89b976b276db"
@@ -108,6 +108,14 @@ def test_helpers():
     assert rows[0]["지방우정청"] == "서울청" and rows[0]["우체국명"] == "A" and cols[-1] == "비고"
     assert sido_of({"주소(도로명)": "강원특별자치도 춘천시"}) == "강원"
     assert sido_of({"주소(도로명)": "전북특별자치도 전주시"}) == "전북"
+    assert sido_of({"주소(도로명)": "전남광주통합특별시 광산구 고봉로 1"}) == "전남광주"
+    assert sido_of({"주소(도로명)": "(영업과,FC실) 서울특별시 양천구 목동동로 411"}) == "서울"
+    assert split_status("(임시청사) 강원도 평창군 경강로 1 [시간제_오전]") == ("강원도 평창군 경강로 1", ["임시청사", "시간제_오전"])
+    assert split_status("(영업과,FC실) 서울특별시 양천구")[1] == []  # not a status tag
+    assert canon_addr("강원도 삼척시 가곡천로 1473") == canon_addr("강원특별자치도 삼척시 가곡천로 1473")
+    assert canon_addr("광주광역시 광산구 고봉로 804-1") == canon_addr("전남광주통합특별시 광산구 고봉로 804-1")
+    assert canon_addr("전북 익산시 평동로 734 (동산동)") == canon_addr("전북특별자치도 익산시 평동로 734")
+    assert canon_addr("강원도 횡성군 강림면 태종로 42") != canon_addr("강원특별자치도 횡성군 강림면 태종로 24")
 
 
 def test_pipeline():
