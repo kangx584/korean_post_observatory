@@ -1,0 +1,68 @@
+name: Check post office dataset
+
+on:
+  schedule:
+    # Every day at 01:23 UTC (10:23 KST)
+    - cron: "23 1 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "new = only files not archived yet, refresh = also re-download newest, refresh-all = re-download everything"
+        type: choice
+        options: [new, refresh, refresh-all]
+        default: new
+
+permissions:
+  contents: write
+
+concurrency:
+  group: post-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Tests
+        run: python tests/test_pipeline.py
+
+      - name: Check portal and download new files
+        id: collect
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          ARGS=""
+          if [ "$MODE" = "refresh" ]; then ARGS="--refresh"; fi
+          if [ "$MODE" = "refresh-all" ]; then ARGS="--refresh-all"; fi
+          # Weekly (Mondays): re-download the newest file to catch silent re-uploads.
+          if [ -z "$MODE" ] && [ "$(date -u +%u)" = "1" ]; then ARGS="--refresh"; fi
+          python scraper/collect.py $ARGS
+
+      - name: Commit if data changed
+        run: |
+          git config user.name  "post-observatory-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain data/snapshots data/raw data/changelog.csv data/sources.json data/stats data/post_offices.csv)" ]; then
+            git add data
+            git commit -m "우체국 현황 갱신: 기준일 ${{ steps.collect.outputs.latest }} ($(date -u +%Y-%m-%d))"
+            git push
+          elif [ "$(date -u +%d)" = "01" ]; then
+            # Monthly heartbeat: GitHub pauses scheduled workflows after 60 days
+            # without repository activity, so record the check date once a month.
+            git add data/meta.json
+            git commit -m "Monthly check: no changes ($(date -u +%Y-%m-%d))" || exit 0
+            git push
+          else
+            echo "No changes; nothing to commit."
+          fi
