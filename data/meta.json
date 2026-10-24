@@ -1,0 +1,16 @@
+{
+  "dataset_page": "https://www.data.go.kr/data/15070368/fileData.do",
+  "openapi_doc": "https://infuser.odcloud.kr/oas/docs?namespace=15070368/v1",
+  "last_checked_utc": "2026-10-24T16:18:38+00:00",
+  "portal_files": [
+    "20230630",
+    "20260831"
+  ],
+  "archived_snapshots": [
+    "20230630",
+    "20260831"
+  ],
+  "latest_기준일": "20260831",
+  "latest_rows": 3307,
+  "last_changed_utc": "2026-10-24T16:18:38+00:00"
+}
